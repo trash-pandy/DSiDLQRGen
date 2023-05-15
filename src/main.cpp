@@ -4,21 +4,28 @@
 #include <string>
 #include <sstream>
 #include <functional>
-#include <optional>
 #include <filesystem>
 #include <iostream>
 #include <numeric>
 #include <ranges>
+#include <cmath>
 
 #pragma comment(lib, "iphlpapi.lib")
 
 #include <raylib.h>
+#if defined(_WINDOWS)
 #define NOGDI
 #define NOUSER
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
-#include <mongoose.h>
 #include <iphlpapi.h>
+#else
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#endif
+#include <mongoose.h>
 
 #include "qrgen.h"
 
@@ -92,7 +99,7 @@ bool DoKeyboardNav(int& selected, const int max, int key_neg = KEY_UP, int key_p
 
 struct TextBox
 {
-	std::string text = "";
+	std::string text;
 	int pos = 0;
 	int text_size = 20;
 	bool edit_mode = false;
@@ -215,12 +222,13 @@ public:
 	QRHostPage()
 		: UI()
 	{
+		std::string local_ip = "0.0.0.0";
+#if defined(_WINDOWS)
 		ULONG buf_len = 0;
 		GetAdaptersInfo(nullptr, &buf_len);
 		const auto ip_adapter_info = new IP_ADAPTER_INFO[buf_len / sizeof(IP_ADAPTER_INFO)];
 		GetAdaptersInfo(ip_adapter_info, &buf_len);
 
-		std::string local_ip = "0.0.0.0";
 		for (auto adapter_iter = ip_adapter_info; adapter_iter != nullptr; adapter_iter = adapter_iter->Next)
 		{
 			if (adapter_iter->GatewayList.IpAddress.String[0] != '0')
@@ -229,6 +237,26 @@ public:
 			}
 		}
 		delete[] ip_adapter_info;
+#else
+		ifaddrs* if_list = nullptr;
+		getifaddrs(&if_list);
+		for (const ifaddrs* entry = if_list; entry != nullptr; entry = entry->ifa_next)
+		{
+			const auto if_addr = entry->ifa_addr;
+			if (if_addr != nullptr && if_addr->sa_family == AF_INET)
+			{
+				const auto socket_addr = &((struct sockaddr_in*) if_addr)->sin_addr;
+				char human_addr[INET_ADDRSTRLEN];
+				inet_ntop(AF_INET, socket_addr, human_addr, INET_ADDRSTRLEN);
+				if (std::string(human_addr, 3) == "127") continue;
+				local_ip = human_addr;
+				break;
+			}
+		}
+		freeifaddrs(if_list);
+
+		std::cout << local_ip << std::endl;
+#endif
 
 		const std::string base = "http://" + local_ip + ":37435";
 		std::vector<std::pair<std::string, std::string>> remote_files;
@@ -262,7 +290,9 @@ public:
 		mg_mgr_poll(&mgr, 33);
 
 		BeginDrawing();
+		if (texture.width != 0)
 		{
+			ClearBackground(WHITE);
 			int scale;
 			if (width >= height)
 			{
@@ -272,7 +302,6 @@ public:
 			{
 				scale = std::floor((height - 40) / texture.height);
 			}
-			ClearBackground(WHITE);
 			DrawTextureEx(texture, Vector2 {20, 20}, 0, scale, WHITE);
 		}
 		EndDrawing();
@@ -432,14 +461,14 @@ class FileViewerPage final : public UI
 	struct FileMeta
 	{
 		std::string name;
-		path path;
+		path file_path;
 		bool is_dir;
 	};
 
 	int selected = 0;
 	bool dirty = true;
 	std::vector<FileMeta> cached_files;
-	path path = current_path();
+	path file_path = current_path();
 
 public:
 	void draw() override
@@ -451,19 +480,19 @@ public:
 			cached_files.clear();
 			cached_files.push_back(FileMeta {
 				.name = "..",
-				.path = path.parent_path(),
+				.file_path = file_path.parent_path(),
 				.is_dir = true
 			});
 			cached_files.push_back(FileMeta {
 				.name = ".",
-				.path = current_path(),
+				.file_path = current_path(),
 				.is_dir = true
 			});
-			for (const auto& dir : directory_iterator(path))
+			for (const auto& dir : directory_iterator(file_path))
 			{
 				cached_files.push_back(FileMeta {
 					.name = dir.path().filename().generic_string(),
-					.path = dir.path(),
+					.file_path = dir.path(),
 					.is_dir = is_directory(dir.path())
 				});
 			}
@@ -471,11 +500,11 @@ public:
 
 		if (DoKeyboardNav(selected, cached_files.size()))
 		{
-			auto selected_path = cached_files[selected].path;
+			auto selected_path = cached_files[selected].file_path;
 			if (is_directory(selected_path))
 			{
 				dirty = true;
-				path = selected_path;
+				file_path = selected_path;
 			}
 			else
 			{
@@ -488,7 +517,7 @@ public:
 		{
 			ClearBackground(WHITE);
 
-			auto path_str = path.generic_string();
+			auto path_str = file_path.generic_string();
 			auto cur_path_width = MeasureText(path_str.c_str(), 20);
 			auto dotdotdot = MeasureText("...", 20) + 2;
 			if (GetScreenWidth() - 40 - cur_path_width >= 0)

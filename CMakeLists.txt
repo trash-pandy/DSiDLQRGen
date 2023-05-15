@@ -17,12 +17,16 @@ find_package(unofficial-mongoose CONFIG REQUIRED)
 
 find_path(QRENCODE_INCLUDE_DIR NAMES qrencode.h)
 find_library(QRENCODE_LIBRARY_RELEASE qrencode)
-find_library(QRENCODE_LIBRARY_DEBUG qrencoded)
+find_library(QRENCODE_LIBRARY_DEBUG qrencode)
 set(QRENCODE_LIBRARIES optimized ${QRENCODE_LIBRARY_RELEASE} debug ${QRENCODE_LIBRARY_DEBUG})
 
 # Add source to this project's executable.
 add_executable (DSiDLQRGen   "src/main.cpp" "src/qrgen.cpp" "src/qrgen.h")
-target_link_libraries(DSiDLQRGen PRIVATE raylib)
+if (MSVC)
+	target_link_libraries(DSiDLQRGen PRIVATE raylib)
+else()
+	target_link_libraries(DSiDLQRGen PRIVATE raylib m asan ubsan ${CMAKE_DL_LIBS} pthread)
+endif()
 target_include_directories(DSiDLQRGen PRIVATE ${QRENCODE_INCLUDE_DIR})
 target_link_libraries(DSiDLQRGen PRIVATE ${QRENCODE_LIBRARIES})
 target_link_libraries(DSiDLQRGen PRIVATE unofficial::mongoose::mongoose)
