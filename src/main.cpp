@@ -82,11 +82,19 @@ bool DoKeyboardNav(int& selected, const int max, int key_neg = KEY_UP, int key_p
 	if (selected > 0 && IsKeyPressedRepeat(key_neg))
 	{
 		selected--;
+		if (IsKeyDown(KEY_LEFT_CONTROL))
+		{
+			selected = 0;
+		}
 	}
 
 	if (selected < max - 1 && IsKeyPressedRepeat(key_pos))
 	{
 		selected++;
+		if (IsKeyDown(KEY_LEFT_CONTROL))
+		{
+			selected = max - 1;
+		}
 	}
 
 	if (IsKeyPressed(KEY_ENTER))
@@ -145,11 +153,14 @@ void DoTextBox(TextBox& textbox)
 	auto partial = textbox.text.substr(0, textbox.pos);
 	auto cursor_x = MeasureText(partial.c_str(), textbox.text_size) + 1;
 	if (textbox.pos == 0) cursor_x += 0;
-	DrawText(textbox.text.c_str(), textbox.rect.x + 4, textbox.rect.y + textbox.rect.height / 2 - textbox.text_size / 2,
+	auto text_offset = std::max(cursor_x - textbox.rect.width + 20, 0.0f);
+	DrawText(textbox.text.c_str(), textbox.rect.x + 4 - text_offset,
+		textbox.rect.y + textbox.rect.height / 2 - textbox.text_size / 2,
 		textbox.text_size, textbox.text_color);
 	if (textbox.edit_mode)
 	{
-		DrawLine(textbox.rect.x + 4 + cursor_x, textbox.rect.y + 2, textbox.rect.x + 4 + cursor_x,
+		DrawLine(textbox.rect.x + 4 + cursor_x - text_offset, textbox.rect.y + 2,
+			textbox.rect.x + 4 + cursor_x - text_offset,
 			textbox.rect.y + textbox.rect.height - 2, textbox.text_color);
 	}
 	EndScissorMode();
@@ -157,7 +168,7 @@ void DoTextBox(TextBox& textbox)
 
 struct Button
 {
-	std::string text = "";
+	std::string text;
 	int text_size = 20;
 	Rectangle rect;
 	Color background = WHITE;
@@ -200,7 +211,7 @@ class QRHostPage final : public UI
 	mg_mgr mgr {};
 
 public:
-	static std::vector<std::pair<std::string, std::string>> files;
+	static std::vector<std::pair<std::string, std::string>> files, urls;
 
 	static void http_serve(mg_connection* c, int ev, void* ev_data, void* fn_data)
 	{
@@ -260,10 +271,14 @@ public:
 
 		const std::string base = "http://" + local_ip + ":37435";
 		std::vector<std::pair<std::string, std::string>> remote_files;
-		remote_files.reserve(files.size());
-		for (auto loc : files | std::views::keys)
+		remote_files.reserve(files.size() + urls.size());
+		for (auto [loc, file]: files)
 		{
 			remote_files.emplace_back(loc, base + "/" + loc);
+		}
+		for (auto [loc, url] : urls)
+		{
+			remote_files.emplace_back(loc, url);
 		}
 
 		auto qr = MakeQr(remote_files);
@@ -308,7 +323,7 @@ public:
 	}
 };
 
-std::vector<std::pair<std::string, std::string>> QRHostPage::files;
+std::vector<std::pair<std::string, std::string>> QRHostPage::files, QRHostPage::urls;
 
 class AddFilePage final : public UI
 {
@@ -406,7 +421,7 @@ public:
 			},
 			[&]
 			{
-				QRHostPage::files.emplace_back(name_box.text, url_box.text);
+				QRHostPage::urls.emplace_back(name_box.text, url_box.text);
 				PopPage();
 			}
 		};
@@ -580,9 +595,13 @@ public:
 			std::make_pair("Copy json", [&]
 			{
 				std::vector<std::pair<std::string, std::string>> remote_files;
-				for (auto [loc, file] : QRHostPage::files)
+				for (auto loc : QRHostPage::files | std::views::keys)
 				{
 					remote_files.emplace_back(loc, "http://PREVIEW_IP/" + loc);
+				}
+				for (auto [loc, url] : QRHostPage::urls)
+				{
+					remote_files.emplace_back(loc, url);
 				}
 				const auto text = MakeQrJson(remote_files);
 				SetClipboardText(text.c_str());
