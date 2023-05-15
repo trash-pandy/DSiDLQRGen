@@ -2,7 +2,6 @@
 #include <vector>
 #include <map>
 #include <string>
-#include <sstream>
 #include <functional>
 #include <filesystem>
 #include <iostream>
@@ -10,21 +9,22 @@
 #include <ranges>
 #include <cmath>
 
-#pragma comment(lib, "iphlpapi.lib")
-
-#include <raylib.h>
 #if defined(_WINDOWS)
 #define NOGDI
 #define NOUSER
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
+#include <WinSock2.h>
 #include <iphlpapi.h>
+#pragma comment(lib, "iphlpapi.lib")
 #else
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #endif
+
+#include <raylib.h>
 #include <mongoose.h>
 
 #include "qrgen.h"
